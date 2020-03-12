@@ -61,31 +61,38 @@ def iter_file_paths(p):
 
 
 def process_file(file_path, **kwargs):
-    if file_path.name.endswith('.gz'):
-        with gzip.open(file_path, mode='rb') as f:
-            process_stream(f, path=file_path, **kwargs)
-    else:
-        with file_path.open(mode='rb') as f:
-            process_stream(f, path=file_path, **kwargs)
+    try:
+        if file_path.name.endswith('.gz'):
+            with gzip.open(file_path, mode='rb') as f:
+                process_stream(f, path=file_path, **kwargs)
+        else:
+            with file_path.open(mode='rb') as f:
+                process_stream(f, path=file_path, **kwargs)
+    except Exception as e:
+        logger.exception('Failed to process file %s: %r', file_path, e)
 
 
 def process_stream(stream, path, task_number, task_count):
-    logger.info('Processing file %5d/%d: %s', task_number, task_count, path)
-    counter = Counter()
-    for n, line in enumerate(stream, start=1):
-        assert isinstance(line, bytes)
-        if n % 100000 == 0:
-            logger.info('Processed %9d lines', n)
-        if line.startswith(b'#'):
-            continue
-        rec = parse_line(line)
-        k = (rec.bucket, rec.key, rec.date.strftime('%Y-%m-%d'), rec.operation)
-        counter[k] += 1
-        if len(counter) >= 1000000:
+    try:
+        with output_lock:
+            logger.info('Processing file %5d/%d: %s', task_number, task_count, path)
+        counter = Counter()
+        for n, line in enumerate(stream, start=1):
+            assert isinstance(line, bytes)
+            if n % 100000 == 0:
+                logger.info('Processed %9d lines', n)
+            if line.startswith(b'#'):
+                continue
+            rec = parse_line(line)
+            k = (rec.bucket, rec.key, rec.date.strftime('%Y-%m-%d'), rec.operation)
+            counter[k] += 1
+            if len(counter) >= 1000000:
+                print_counts(counter)
+                counter = Counter()
+        if counter:
             print_counts(counter)
-            counter = Counter()
-    if counter:
-        print_counts(counter)
+    except Exception as e:
+        logger.exception('Failed to process stream %s: %r', path, e)
 
 
 def print_counts(counter):
@@ -93,6 +100,7 @@ def print_counts(counter):
         for k, n in counter.items():
             bucket, key, day, operation = k
             print('{} {} date={} operation={} count={}'.format(bucket, key, day, operation, n))
+            sys.stdout.flush()
 
 
 def list_file_paths(p):
