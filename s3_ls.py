@@ -53,6 +53,5 @@ def setup_logging():
     getLogger('botocore.retryhandler').setLevel(INFO)
 
 
-
 if __name__ == '__main__':
     main()
